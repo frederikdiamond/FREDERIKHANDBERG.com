@@ -69,7 +69,15 @@ export function ProfileProvider({ children }: ProfileProviderProps) {
             pubkeysToRemoveFromLoading.add(event.pubkey);
 
             if (!prevProfiles[event.pubkey]) {
-              const profile = JSON.parse(event.content);
+              const rawProfile = JSON.parse(event.content) as Profile & {
+                displayName?: string;
+              };
+              const { displayName, ...profileFields } = rawProfile;
+              const profile: Profile = {
+                ...profileFields,
+                display_name:
+                  rawProfile.display_name ?? displayName ?? rawProfile.name,
+              };
               newProfiles[event.pubkey] = profile;
               updatedProfiles = true;
             }
