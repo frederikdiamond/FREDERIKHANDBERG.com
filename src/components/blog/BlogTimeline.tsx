@@ -91,7 +91,8 @@ export default function BlogTimeline({
 
   const { events: replies } = useNostrEvents({
     filter: {
-      kinds: [1],
+      // Kind 1 is the legacy text-note reply format; kind 1111 is NIP-22 comments.
+      kinds: [1, 1111],
       "#e": originalPostIds,
       since: 0,
       limit: Math.max(100, originalPostIds.length * 2),
