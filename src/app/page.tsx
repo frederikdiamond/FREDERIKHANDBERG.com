@@ -24,11 +24,9 @@ export default function Home() {
   const [isHoveringFashionText, setIsHoveringFashionText] = useState(false);
   const relayUrls = [
     "wss://relay.primal.net",
-    "wss://relay.damus.io",
     "wss://relay.nostr.band",
     "wss://relay.ditto.pub/",
     "wss://nos.lol",
-    "wss://purplepag.es",
   ];
 
   const [showSecondText, setShowSecondText] = useState(false);

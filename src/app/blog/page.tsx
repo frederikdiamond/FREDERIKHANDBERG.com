@@ -14,7 +14,6 @@ export default function Blog() {
     "wss://relay.nostr.band",
     "wss://relay.ditto.pub/",
     "wss://nos.lol",
-    "wss://purplepag.es",
   ];
 
   return (
