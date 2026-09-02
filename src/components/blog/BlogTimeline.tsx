@@ -27,12 +27,15 @@ export default function BlogTimeline({
   const [oldestTimestamp, setOldestTimestamp] = useState<number>(
     Math.floor(Date.now() / 1000),
   );
+  const [accumulatedPosts, setAccumulatedPosts] = useState<NostrEvent[]>([]);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement | null>(null);
   const [loadTriggerCount, setLoadTriggerCount] = useState(0);
   const initialPostCount = useRef<number>(0);
+  const processedPostsIds = useRef<Set<string>>(new Set());
+  const pageStartPostIds = useRef<Set<string>>(new Set());
 
-  const { events: originalPosts } = useNostrEvents({
+  const { events: newPosts } = useNostrEvents({
     filter: {
       authors: [
         "9c9f81ed795f0f5efa558932824687d84fc7e6a4cfa6db5d6d3b50fcb7ffaec2",
@@ -42,38 +45,39 @@ export default function BlogTimeline({
       limit: POSTS_PER_PAGE,
     },
   });
-
-  const { events: olderPosts } = useNostrEvents({
-    filter: {
-      authors: [
-        "9c9f81ed795f0f5efa558932824687d84fc7e6a4cfa6db5d6d3b50fcb7ffaec2",
-      ],
-      until: oldestTimestamp,
-      kinds: [1],
-      limit: POSTS_PER_PAGE,
-    },
-    enabled: oldestTimestamp < Math.floor(Date.now() / 1000),
-  });
-
-  const allPosts = useMemo(() => {
-    const combined = [...originalPosts, ...olderPosts];
-    const unique = combined.filter(
-      (post, index, self) => index === self.findIndex((p) => p.id === post.id),
-    );
-    return unique.sort((a, b) => b.created_at - a.created_at);
-  }, [originalPosts, olderPosts]);
 
   useEffect(() => {
-    if (originalPosts.length > 0 && initialPostCount.current === 0) {
-      initialPostCount.current = originalPosts.length;
+    if (newPosts.length > 0) {
+      const hasNew = newPosts.some((p) => !processedPostsIds.current.has(p.id));
+
+      if (hasNew) {
+        newPosts.forEach((p) => processedPostsIds.current.add(p.id));
+
+        setAccumulatedPosts((prev) => {
+          const combined = [...prev, ...newPosts];
+          const unique = combined.filter(
+            (post, index, self) =>
+              index === self.findIndex((p) => p.id === post.id),
+          );
+          return unique.sort((a, b) => b.created_at - a.created_at);
+        });
+
+        if (initialPostCount.current === 0) {
+          initialPostCount.current = newPosts.length;
+        }
+      }
     }
-  }, [originalPosts]);
+  }, [newPosts]);
 
   useEffect(() => {
     if (isLoading && loadTriggerCount > 0) {
       // Wait a bit for the query to potentially return results
       const timeout = setTimeout(() => {
-        if (olderPosts.length < POSTS_PER_PAGE && olderPosts.length >= 0) {
+        const pagePostCount = newPosts.filter(
+          (post) => !pageStartPostIds.current.has(post.id),
+        ).length;
+
+        if (pagePostCount < POSTS_PER_PAGE) {
           setHasMorePosts(false);
         }
 
@@ -82,7 +86,9 @@ export default function BlogTimeline({
 
       return () => clearTimeout(timeout);
     }
-  }, [isLoading, loadTriggerCount, olderPosts.length]);
+  }, [isLoading, loadTriggerCount, newPosts.length]);
+
+  const allPosts = accumulatedPosts;
 
   const originalPostIds = useMemo(
     () => allPosts.map((event) => event.id),
@@ -140,25 +146,18 @@ export default function BlogTimeline({
   const loadMorePosts = useCallback(() => {
     if (isLoading || !hasMorePosts || initialPostCount.current === 0) return;
 
-    const filteredPosts = filterEvents(allPosts);
-    if (filteredPosts.length > 0) {
-      const oldestPost = filteredPosts[filteredPosts.length - 1];
+    if (allPosts.length > 0) {
+      const oldestPost = allPosts[allPosts.length - 1];
       const newTimestamp = oldestPost.created_at - 1;
 
+      pageStartPostIds.current = new Set(newPosts.map((post) => post.id));
       setIsLoading(true);
       setOldestTimestamp(newTimestamp);
       setLoadTriggerCount((prev) => prev + 1);
     } else {
       setHasMorePosts(false);
     }
-  }, [
-    isLoading,
-    hasMorePosts,
-    allPosts,
-    oldestTimestamp,
-    loadTriggerCount,
-    filterEvents,
-  ]);
+  }, [isLoading, hasMorePosts, allPosts, newPosts]);
 
   const handleScroll = useCallback(() => {
     if (maxElements) return;
@@ -214,7 +213,7 @@ export default function BlogTimeline({
   }, [loadMorePosts, isLoading, hasMorePosts]);
 
   useEffect(() => {
-    const allEvents = [...originalPosts, ...replies, ...mentions];
+    const allEvents = [...allPosts, ...replies, ...mentions];
 
     if (allEvents.length > 0) {
       const uniquePubkeys = [
@@ -224,7 +223,7 @@ export default function BlogTimeline({
         loadProfile(pubkey);
       });
     }
-  }, [originalPosts, replies, mentions, loadProfile]);
+  }, [allPosts, replies, mentions, loadProfile]);
 
   const getRepliesForPost = (postId: string) => {
     const postReplies = replies.filter((reply) =>
