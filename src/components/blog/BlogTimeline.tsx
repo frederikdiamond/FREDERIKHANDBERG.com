@@ -95,16 +95,33 @@ export default function BlogTimeline({
     [allPosts],
   );
 
-  const { events: replies } = useNostrEvents({
+  const { events: legacyReplies } = useNostrEvents({
     filter: {
-      // Kind 1 is the legacy text-note reply format; kind 1111 is NIP-22 comments.
-      kinds: [1, 1111],
+      // Legacy text-note replies reference their parent post with a lowercase e tag.
+      kinds: [1],
       "#e": originalPostIds,
       since: 0,
       limit: Math.max(100, originalPostIds.length * 2),
     },
     enabled: originalPostIds.length > 0,
   });
+
+  const { events: nip22Replies } = useNostrEvents({
+    filter: {
+      // NIP-22 comments use uppercase E to identify the root post. Their
+      // lowercase e tag identifies only the direct parent, which may be a comment.
+      kinds: [1111],
+      "#E": originalPostIds,
+      since: 0,
+      limit: Math.max(100, originalPostIds.length * 2),
+    },
+    enabled: originalPostIds.length > 0,
+  });
+
+  const replies = useMemo(
+    () => [...legacyReplies, ...nip22Replies],
+    [legacyReplies, nip22Replies],
+  );
 
   const { events: mentions } = useNostrEvents({
     filter: {
@@ -227,7 +244,11 @@ export default function BlogTimeline({
 
   const getRepliesForPost = (postId: string) => {
     const postReplies = replies.filter((reply) =>
-      reply.tags.some((tag) => tag[0] === "e" && tag[1] === postId),
+      reply.tags.some(
+        (tag) =>
+          tag[1] === postId &&
+          (tag[0] === "e" || (reply.kind === 1111 && tag[0] === "E")),
+      ),
     );
     const postMentions = mentions.filter(
       (mention) =>
